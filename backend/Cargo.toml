@@ -1,0 +1,32 @@
+[package]
+name = "api-gateway"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = { version = "0.8", features = ["macros", "multipart"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono", "json"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+jsonwebtoken = "9"
+bcrypt = "0.17"
+reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
+futures-util = "0.3"
+bytes = "1"
+async-stream = "0.3"
+redis = { version = "0.27", features = ["tokio-comp"] }
+dotenvy = "0.15"
+thiserror = "2"
+anyhow = "1"
+validator = { version = "0.19", features = ["derive"] }
+
+[profile.release]
+opt-level = 3
+lto = true

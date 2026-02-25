@@ -1,0 +1,203 @@
+services:
+  # === Frontend ===
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    networks:
+      - graphrag-net
+
+  # === API Gateway (Rust/Axum) ===
+  api-gateway:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379
+      - QDRANT_URL=http://qdrant:6333
+      - LLM_SERVICE_URL=http://llm-service:8002
+      - ETL_SERVICE_URL=http://etl-service:8001
+      - CORS_ALLOWED_ORIGIN=${CORS_ALLOWED_ORIGIN:-http://localhost:3000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - graphrag-net
+
+  # === ETL Service (Python/FastAPI) ===
+  etl-service:
+    build:
+      context: ./etl
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    env_file: .env
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - LLM_SERVICE_URL=http://llm-service:8002
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
+      - MINIO_BUCKET=${MINIO_BUCKET:-documents}
+    volumes:
+      - document-watch:/data/watch
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      llm-service:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - graphrag-net
+
+  # === LLM Service (Python/FastAPI + Ollama) ===
+  llm-service:
+    build:
+      context: ./llm
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8002"
+    env_file: .env
+    environment:
+      - LLM_MODEL=${LLM_MODEL:-qwen2.5:7b}
+      - OLLAMA_HOST=http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8002/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - graphrag-net
+
+  # === Ollama (LLM Runtime - Dev) ===
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/11434'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - graphrag-net
+
+  # === Qdrant (Vector DB) ===
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/6333'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - graphrag-net
+
+  # === PostgreSQL ===
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-graphrag}
+      - POSTGRES_USER=${POSTGRES_USER:-graphrag}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme_postgres}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-graphrag}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - graphrag-net
+
+  # === Redis ===
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - graphrag-net
+
+  # === MinIO (Object Storage) ===
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-changeme_minio}
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - graphrag-net
+
+volumes:
+  postgres-data:
+  redis-data:
+  qdrant-data:
+  minio-data:
+  ollama-models:
+  document-watch:
+
+networks:
+  graphrag-net:
+    driver: bridge

@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+target/
+
+# Environment
+.env
+.env.local
+.env.production
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# Docker
+docker/postgres/data/
+docker/neo4j/data/
+docker/qdrant/data/
+docker/redis/data/
+docker/minio/data/
+docker/grafana/data/
+
+# Logs
+*.log
+logs/
+
+# Test coverage
+coverage/
+htmlcov/
+.coverage
+
+# Rust
+target/
+
+# Claude Code
+.claude/projects/
